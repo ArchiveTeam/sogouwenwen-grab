@@ -523,6 +523,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         html = html .. "\n" .. flatten_json(json)
       elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/question%-commonlist%?") then
         local start = tonumber(string.match(url, "[%?&]start=([0-9]+)"))
+        local limit = tonumber(string.match(url, "[%?&]limit=([0-9]+)"))
         local json = cjson.decode(html)
         for _, answer in ipairs(json) do
           local previous = context["api_answers"][answer["idStr"]]
@@ -534,9 +535,9 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             )
           }
         end
-        if #json == 0
-          and start == context["answer_total"] then
-          context["api_end"] = start
+        if #json < limit
+          and start + #json == context["answer_total"] then
+          context["api_end"] = start + #json
         end
         html = html .. "\n" .. flatten_json(json)
       elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/my%-list%?") then
@@ -598,14 +599,13 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             end
           end
         end
-        for page = 0, math.ceil(context["answer_total"] / 5) do
-          local start = math.min(page * 5, context["answer_total"])
+        for start = 0, context["answer_total"], 20 do
           if not context["api_totals"][start] then
             context["api_totals"][start] = context["answer_total"]
             check(
               "https://wenwen.sogou.com/wapi/ms/question-commonlist"
                 .. "?start=" .. tostring(start)
-                .. "&limit=5"
+                .. "&limit=20"
                 .. "&qid=" .. item_value
                 .. "&orig=254"
                 .. ajax_parameters(),
