@@ -224,6 +224,7 @@ allowed = function(url, parent)
   for _, pattern in pairs({
     "^https?://[^/]+/submit/",
     "^https?://[^/]+/login/",
+    "^https?://wenwenfeedapi%.sogou%.com/sgapi/related/",
     "^https?://wenwen%.sogou%.com/z/askquestion",
     "^https?://wenwen%.sogou%.com/question/ask%?",
     "^https?://wenwen%.sogou%.com/notfound",
