@@ -254,6 +254,9 @@ allowed = function(url, parent)
       discover_item(discovered_items, percent_encode_url(new_item))
       return false
     end
+    if string.match(url, "[%?&]ch=") then
+      return false
+    end
     return true
   end
 
