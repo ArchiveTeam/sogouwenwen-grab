@@ -225,6 +225,7 @@ allowed = function(url, parent)
     "^https?://[^/]+/submit/",
     "^https?://[^/]+/login/",
     "^https?://wenwenfeedapi%.sogou%.com/sgapi/related/",
+    "^https?://cache%.soso%.com/qlogo/g%?",
     "^https?://wenwen%.sogou%.com/z/askquestion",
     "^https?://wenwen%.sogou%.com/question/ask%?",
     "^https?://wenwen%.sogou%.com/notfound",
