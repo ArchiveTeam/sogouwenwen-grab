@@ -188,8 +188,8 @@ set_item = function(url)
       finish_item()
       ids = {}
       context = {}
+      context["entry_url"] = url
       if new_item_type ~= "media" then
-        context["entry_url"] = url
         context["ajax_count"] = math.floor(socket.gettime() * 1000)
       end
       if new_item_type == "question" then
@@ -1086,7 +1086,9 @@ wget.callbacks.write_to_warc = function(url, http_stat)
     local newloc = urlparse.absolute(url["url"], http_stat["newloc"])
     if string.match(newloc, "^https?://wenwen%.sogou%.com/notFound")
       or string.match(newloc, "^https?://wenwen%.sogou%.com/question/notFound") then
-      if context["content_seen"] then
+      if context["content_seen"]
+        or tries > 0
+        or context["entry_url"] ~= url["url"] then
         retry_url = true
       else
         not_found_count = not_found_count + 1
@@ -1146,7 +1148,7 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
     io.stdout:write("Server returned bad response. ")
     io.stdout:flush()
     tries = tries + 1
-    local maxtries = 5
+    local maxtries = 7
     if tries > maxtries then
       io.stdout:write(" Skipping.\n")
       io.stdout:flush()
