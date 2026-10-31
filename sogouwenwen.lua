@@ -143,7 +143,7 @@ finish_item = function()
     return nil
   end
   if item_type == "question" then
-    if get_count(context["html_answers"]) ~= context["answer_total"] + ((context["best_answer"] and 1) or 0)
+    if get_count(context["html_answers"]) ~= context["answer_total"] + get_count(context["best_answers"])
       or get_count(context["api_answers"]) ~= context["answer_total"]
       or context["api_end"] ~= context["answer_total"]
       or context["counts_changed"]
@@ -155,7 +155,7 @@ finish_item = function()
     end
     for answer, data in pairs(context["api_answers"]) do
       if not context["html_answers"][answer]
-        or answer == context["best_answer"]
+        or context["best_answers"][answer]
         or data["comment_total"] > context["comments"][answer]["total"] then
         abort_item()
       end
@@ -194,6 +194,7 @@ set_item = function(url)
       end
       if new_item_type == "question" then
         context["html_answers"] = {}
+        context["best_answers"] = {}
         context["comments"] = {}
         context["api_answers"] = {}
         context["api_totals"] = {}
@@ -221,8 +222,8 @@ allowed = function(url, parent)
   end
 
   for _, pattern in pairs({
-    "^https?://wenwen%.sogou%.com/submit/",
-    "^https?://wenwen%.sogou%.com/login/",
+    "^https?://[^/]+/submit/",
+    "^https?://[^/]+/login/",
     "^https?://wenwen%.sogou%.com/z/askquestion",
     "^https?://wenwen%.sogou%.com/question/ask%?",
     "^https?://wenwen%.sogou%.com/notfound",
@@ -447,6 +448,9 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       context["trace_count"] = context["trace_count"] + 1
       parameters = parameters .. "&_traceId=" .. context["trace_id"] .. ":" .. tostring(context["trace_count"])
     end
+    if context["csrf_token"] and context["csrf_token"] ~= "" then
+      parameters = parameters .. "&c_tk=" .. urlparse.escape(context["csrf_token"])
+    end
     return parameters
   end
 
@@ -491,6 +495,16 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         or string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/user%-info%?")
         or string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/user%-badge%?") then
         html = html .. "\n" .. flatten_json(cjson.decode(html))
+        if string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/user%-info%?") then
+          check(
+            "https://wenwen.sogou.com/wapi/ms/user-badge"
+              .. "?uid=" .. urlparse.escape(urlparse.unescape(item_value))
+              .. "&ta=" .. urlparse.escape(context["ta"])
+              .. ajax_parameters()
+          )
+        elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/user%-badge%?") then
+          history_start = 0
+        end
       elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/comments%?") then
         local ansid = string.match(url, "[%?&]ansid=([0-9]+)")
         local start = tonumber(string.match(url, "[%?&]start=([0-9]+)"))
@@ -522,13 +536,14 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         html = html .. "\n" .. flatten_json(json)
       elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/my%-list%?") then
         local json = cjson.decode(html)
+        local start = tonumber(string.match(url, "[%?&]start=([0-9]+)"))
         if context["history_total"] == nil then
           context["history_total"] = json["total"]
-          history_start = 20
         end
+        history_start = start + 20
         if json["questions"] ~= cjson.null then
           for _, question in ipairs(json["questions"]) do
-            context["history"][question["idStr"]] = tonumber(string.match(url, "[%?&]start=([0-9]+)"))
+            context["history"][question["idStr"]] = start
             check("https://wenwen.sogou.com/z/q" .. question["idStr"] .. ".htm")
           end
         end
@@ -606,28 +621,20 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             .. "?uid=" .. urlparse.escape(urlparse.unescape(item_value))
             .. ajax_parameters()
         )
-        check(
-          "https://wenwen.sogou.com/wapi/ms/user-badge"
-            .. "?uid=" .. urlparse.escape(urlparse.unescape(item_value))
-            .. "&ta=" .. urlparse.escape(context["ta"])
-            .. ajax_parameters()
-        )
-        history_start = 0
       end
     end
 
-    if history_start then
-      for start = history_start, (context["history_total"] or 1) - 1, 20 do
-        check(
-          "https://wenwen.sogou.com/wapi/ms/my-list"
-            .. "?tp=20"
-            .. "&start=" .. tostring(start)
-            .. "&len=20"
-            .. "&uid=" .. urlparse.escape(urlparse.unescape(item_value))
-            .. "&ta=" .. urlparse.escape(context["ta"])
-            .. ajax_parameters()
-        )
-      end
+    if history_start
+      and history_start < (context["history_total"] or 1) then
+      check(
+        "https://wenwen.sogou.com/wapi/ms/my-list"
+          .. "?tp=20"
+          .. "&start=" .. tostring(history_start)
+          .. "&len=20"
+          .. "&uid=" .. urlparse.escape(urlparse.unescape(item_value))
+          .. "&ta=" .. urlparse.escape(context["ta"])
+          .. ajax_parameters()
+      )
     end
 
     if html then
@@ -635,6 +642,14 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         ["\""]=string.gsub(html, "&[qQ][uU][oO][tT];", "\""),
         ["'"]=string.gsub(html, "&#039;", "'")
       }) do
+        local pattern = "%s[sS][rR][cC][sS][eE][tT]%s*=%s*" .. quote .. "([^" .. quote .. "]+)" .. quote
+        for srcset in string.gmatch(quoted, pattern) do
+          for newurl in string.gmatch(srcset, "([^,%s]+)[^,]*") do
+            checknewurl(newurl)
+            checknewshorturl(newurl)
+          end
+        end
+        quoted = string.gsub(quoted, pattern, "")
         for newurl in string.gmatch(quoted, "([^" .. quote .. "]+)") do
           checknewurl(newurl)
         end
@@ -691,6 +706,11 @@ wget.callbacks.write_to_warc = function(url, http_stat)
     status_code == 200
     or status_code == 301
     or status_code == 302
+    or (
+      status_code == 404
+      and item_type == "media"
+      and string.match(url["url"], "^https?://cache%.soso%.com/qlogo/g%?")
+    )
   ) then
     retry_url = true
     return false
@@ -699,7 +719,8 @@ wget.callbacks.write_to_warc = function(url, http_stat)
   -- a ton of checks are done here, since the website behaves very unstable when
   -- it comes to returning correct content.
 
-  if status_code == 200 then
+  if status_code == 200
+    or status_code == 404 then
     if (http_stat["contlen"] >= 0 and http_stat["len"] ~= http_stat["contlen"])
       or http_stat["len"] == 0 then
       retry_url = true
@@ -765,7 +786,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
             or not string.match(answer["idStr"], "^[0-9]+$")
             or answer["commentNum"] < 0
             or answer["commentNum"] % 1 ~= 0
-            or answer["idStr"] == context["best_answer"]
+            or context["best_answers"][answer["idStr"]]
             or seen[answer["idStr"]]
             or (
               previous
@@ -838,7 +859,6 @@ wget.callbacks.write_to_warc = function(url, http_stat)
           return false
         end
         local json = cjson.decode(html)
-        local count = 0
         for _, key in pairs({
           "activityBadges",
           "privilegeBadges",
@@ -859,12 +879,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
               retry_url = true
               return false
             end
-            count = count + 1
           end
-        end
-        if count == 0 then
-          retry_url = true
-          return false
         end
         context["user_badge"] = true
       elseif string.match(url["url"], "^https?://wenwen%.sogou%.com/wapi/ms/my%-list%?") then
@@ -922,11 +937,18 @@ wget.callbacks.write_to_warc = function(url, http_stat)
         if item_type == "question" then
           local answers = {}
           local pg = tonumber(string.match(url["url"], "[%?&]pg=([0-9]+)")) or 0
-          local best_ans_id = string.match(html, "id=\"bestAnswers\".-id=\"ans_([0-9]+)\"")
+          local best_answers = {}
+          local best_html = string.match(html, "id=\"bestAnswers\"(.*)")
+          if best_html then
+            best_html = string.match(best_html, "^(.-)class=\"replay%-wrap common_answers") or best_html
+            for ans_id in string.gmatch(best_html, "id=\"ans_([0-9]+)\"") do
+              best_answers[ans_id] = true
+            end
+          end
           for ans_id in string.gmatch(html, "id=\"ans_([0-9]+)\"") do
             if answers[ans_id]
               or (
-                ans_id ~= best_ans_id
+                not best_answers[ans_id]
                 and context["html_answers"][ans_id]
                 and context["html_answers"][ans_id] ~= pg
               ) then
@@ -943,10 +965,8 @@ wget.callbacks.write_to_warc = function(url, http_stat)
             retry_url = true
             return false
           end
-          local best = 0
-          if data["hasbestAnswer"] == true then
-            best = 1
-          elseif data["hasbestAnswer"] ~= false then
+          local best = get_count(best_answers)
+          if data["hasbestAnswer"] ~= (best > 0) then
             retry_url = true
             return false
           end
@@ -966,8 +986,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
           if ending and answer_total == 0 and count == best then
             answer_total = context["answer_total"]
           end
-          if count < best
-            or count > 5 + best
+          if count > 5 + best
             or (
               (pg > 0 or answer_total > 5)
               and count > best
@@ -1016,7 +1035,9 @@ wget.callbacks.write_to_warc = function(url, http_stat)
             context["counts_changed"] = true
           end
           context["answer_total"] = math.max(context["answer_total"] or 0, answer_total)
-          context["best_answer"] = (best == 1 and best_ans_id) or nil
+          for ans_id in pairs(best_answers) do
+            context["best_answers"][ans_id] = true
+          end
           if ending then
             context["ending_page"] = pg
           end
@@ -1029,13 +1050,21 @@ wget.callbacks.write_to_warc = function(url, http_stat)
             return false
           end
         end
+        context["csrf_token"] = data["csrfToken"]
         context["content_seen"] = true
       end
     else
       local file = assert(io.open(http_stat["local_file"], "rb"))
-      local data = string.lower(file:read(256))
+      local data = string.lower(file:read(1024))
       file:close()
-      if string.match(data, "<html")
+      if status_code == 404 then
+        if not string.match(data, "<code>nosuchkey</code>")
+          or not string.match(data, "<resource>/qlogo/g</resource>")
+          or not string.match(data, "</error>%s*$") then
+          retry_url = true
+          return false
+        end
+      elseif string.match(data, "<html")
         or string.match(data, "forbidden") then
         retry_url = true
         return false
