@@ -148,7 +148,7 @@ finish_item = function()
       or context["api_end"] ~= context["answer_total"]
       or context["counts_changed"]
       or (
-        context["answer_total"] >= 5
+        context["answer_total"] > 5
         and context["ending_page"] ~= math.ceil(context["answer_total"] / 5)
       ) then
       abort_item()
@@ -613,7 +613,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             )
           end
         end
-        if context["answer_total"] >= 5 then
+        if context["answer_total"] > 5 then
           for page = 1, math.ceil(context["answer_total"] / 5) do
             check("https://wenwen.sogou.com/question/q" .. item_value .. ".htm?pg=" .. tostring(page))
           end
