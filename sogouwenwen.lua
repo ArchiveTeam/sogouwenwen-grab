@@ -1103,9 +1103,14 @@ wget.callbacks.write_to_warc = function(url, http_stat)
       if context["content_seen"]
         or tries > 0
         or (context["api_answers"] and next(context["api_answers"])) then
+        not_found_count = not_found_count + 1
+        if not_found_count >= 3 then
+          print("sleeping 60 seconds after many retryable notfound redirects.")
+          os.execute("sleep 60")
+          not_found_count = 0
+        end
         retry_url = true
       else
-        not_found_count = not_found_count + 1
         abort_item()
       end
       return false
@@ -1143,11 +1148,6 @@ wget.callbacks.httploop_result = function(url, err, http_stat)
 
   if abortgrab then
     abort_item()
-    if not_found_count >= 3 then
-      print("sleeping 70 seconds after many notfound redirects.")
-      os.execute("sleep 60")
-      not_found_count = 0
-    end
     return wget.actions.EXIT
   end
 
