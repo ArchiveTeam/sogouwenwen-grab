@@ -254,7 +254,8 @@ allowed = function(url, parent)
       discover_item(discovered_items, percent_encode_url(new_item))
       return false
     end
-    if string.match(url, "[%?&]ch=") then
+    if string.match(url, "[%?&]ch=")
+      or string.match(url, "^https?://wenwen%.sogou%.com/z/") then
       return false
     end
     return true
@@ -550,7 +551,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         if json["questions"] ~= cjson.null then
           for _, question in ipairs(json["questions"]) do
             context["history"][question["idStr"]] = start
-            check("https://wenwen.sogou.com/z/q" .. question["idStr"] .. ".htm")
+            check("https://wenwen.sogou.com/question/q" .. question["idStr"] .. ".htm")
           end
         end
         html = html .. "\n" .. flatten_json(json)

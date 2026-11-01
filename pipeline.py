@@ -71,7 +71,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20261031.07'
+VERSION = '20261101.01'
 TRACKER_ID = 'sogouwenwen'
 TRACKER_HOST = 'legacy-api.arpa.li'
 MULTI_ITEM_SIZE = 100
@@ -373,7 +373,7 @@ class WgetArgs(object):
             item_type, item_value = item_name.split(':', 1)
             if item_type == 'question':
                 wget_args.extend(['--warc-header', 'sogouwenwen-question: '+item_value])
-                wget_args.append('https://wenwen.sogou.com/z/q'+item_value+'.htm')
+                wget_args.append('https://wenwen.sogou.com/question/q'+item_value+'.htm')
             elif item_type == 'user':
                 wget_args.extend(['--warc-header', 'sogouwenwen-user: '+item_value])
                 wget_args.append('https://wenwen.sogou.com/user/center?uid='+quote(unquote(item_value), safe=''))
