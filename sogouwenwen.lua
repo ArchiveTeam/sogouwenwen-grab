@@ -190,7 +190,6 @@ set_item = function(url)
       finish_item()
       ids = {}
       context = {}
-      context["entry_url"] = url
       if new_item_type ~= "media" then
         context["ajax_count"] = math.floor(socket.gettime() * 1000)
       end
@@ -336,6 +335,11 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
     return string.lower(a) .. b
   end
 
+  local referer_url = url
+  if item_type == "user" then
+    referer_url = "https://wenwen.sogou.com/user/center?uid=" .. urlparse.escape(urlparse.unescape(item_value))
+  end
+
   local function check(newurl, body_data, referer)
     if not newurl then
       newurl = ""
@@ -369,14 +373,14 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
       if string.match(url_, "^https://wenwen%.sogou%.com/wapi/") then
         url_data["headers"]["Accept"] = "application/json, text/javascript, */*; q=0.01"
         url_data["headers"]["X-Requested-With"] = "XMLHttpRequest"
-        url_data["headers"]["Referer"] = referer or context["entry_url"]
+        url_data["headers"]["Referer"] = referer or referer_url
         url_data["headers"]["Sec-Fetch-Dest"] = "empty"
         url_data["headers"]["Sec-Fetch-Mode"] = "cors"
         url_data["headers"]["Sec-Fetch-Site"] = "same-origin"
       elseif string.match(url_, "^https://wenwenfeedapi%.sogou%.com/") then
         url_data["headers"]["Accept"] = "application/json, text/javascript, */*; q=0.01"
         url_data["headers"]["Origin"] = "https://wenwen.sogou.com"
-        url_data["headers"]["Referer"] = referer or context["entry_url"]
+        url_data["headers"]["Referer"] = referer or referer_url
         url_data["headers"]["Sec-Fetch-Dest"] = "empty"
         url_data["headers"]["Sec-Fetch-Mode"] = "cors"
         url_data["headers"]["Sec-Fetch-Site"] = "same-site"
@@ -543,8 +547,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         end
         if not context["answer_total"] then
           context["api_totals"][start] = #json
-          context["entry_url"] = "https://wenwen.sogou.com/question/q" .. item_value .. ".htm"
-          check(context["entry_url"])
+          check("https://wenwen.sogou.com/question/q" .. item_value .. ".htm")
         end
         html = html .. "\n" .. flatten_json(json)
       elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/my%-list%?") then
@@ -608,7 +611,7 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
         end
         for start = 0, context["answer_total"], 20 do
           if not context["api_totals"][start]
-            or context["api_totals"][start] < math.min(20, context["answer_total"]) then
+            or context["api_totals"][start] < math.min(20, context["answer_total"] - start) then
             context["api_totals"][start] = context["answer_total"]
             check(
               "https://wenwen.sogou.com/wapi/ms/question-commonlist"
@@ -693,6 +696,7 @@ end
 
 wget.callbacks.write_to_warc = function(url, http_stat)
   local headers = http_stat["response_headers"]["headers"]
+  local write_response = true
   status_code = http_stat["statcode"]
   content_type = (headers["content-type"] and string.lower(headers["content-type"][1])) or ""
   set_item(url["url"])
@@ -819,6 +823,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
           end
           seen[answer["idStr"]] = true
         end
+        write_response = #json > 0
       elseif string.match(url["url"], "^https?://wenwen%.sogou%.com/wapi/ms/comments%?") then
         if not string.match(html, "^%s*%[") then
           retry_url = true
@@ -1097,8 +1102,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
       or string.match(newloc, "^https?://wenwen%.sogou%.com/question/notFound") then
       if context["content_seen"]
         or tries > 0
-        or (context["api_answers"] and next(context["api_answers"]))
-        or context["entry_url"] ~= url["url"] then
+        or (context["api_answers"] and next(context["api_answers"])) then
         retry_url = true
       else
         not_found_count = not_found_count + 1
@@ -1114,7 +1118,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
 
   retry_url = false
   tries = 0
-  return true
+  return write_response
 end
 
 wget.callbacks.httploop_result = function(url, err, http_stat)
