@@ -36,6 +36,8 @@ local item_patterns = {
   ["^https?://wenwen%.sogou%.com/question/q([0-9]+)%.htm"] = "question",
   ["^https?://wenwen%.sogou%.com/question/%?qid=([0-9]+)"] = "question",
   ["^https?://wenwen%.sogou%.com/question/%?[^#]+&qid=([0-9]+)"] = "question",
+  ["^https?://wenwen%.sogou%.com/wapi/ms/question%-commonlist%?qid=([0-9]+)"] = "question",
+  ["^https?://wenwen%.sogou%.com/wapi/ms/question%-commonlist%?[^#]+&qid=([0-9]+)"] = "question",
   ["^https?://wenwen%.sogou%.com/user/center/?%?uid=([^&#]+)"] = "user",
   ["^https?://wenwen%.sogou%.com/user/center/?%?[^#]+&uid=([^&#]+)"] = "user",
   ["^https?://wenwen%.sogou%.com/cate/tag/?%?tag_?[Ii]d=([^&#]*)"] = "tag",
@@ -536,9 +538,13 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
             )
           }
         end
-        if #json < limit
-          and start + #json == context["answer_total"] then
+        if #json < limit then
           context["api_end"] = start + #json
+        end
+        if not context["answer_total"] then
+          context["api_totals"][start] = #json
+          context["entry_url"] = "https://wenwen.sogou.com/question/q" .. item_value .. ".htm"
+          check(context["entry_url"])
         end
         html = html .. "\n" .. flatten_json(json)
       elseif string.match(url, "^https?://wenwen%.sogou%.com/wapi/ms/my%-list%?") then
@@ -601,7 +607,8 @@ wget.callbacks.get_urls = function(file, url, is_css, iri)
           end
         end
         for start = 0, context["answer_total"], 20 do
-          if not context["api_totals"][start] then
+          if not context["api_totals"][start]
+            or context["api_totals"][start] < math.min(20, context["answer_total"]) then
             context["api_totals"][start] = context["answer_total"]
             check(
               "https://wenwen.sogou.com/wapi/ms/question-commonlist"
@@ -772,7 +779,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
         local limit = tonumber(string.match(url["url"], "[%?&]limit=([0-9]+)"))
         local json = cjson.decode(html)
         if #json > limit
-          or #json < math.min(limit, math.max(context["answer_total"] - start, 0)) then
+          or #json < math.min(limit, math.max((context["answer_total"] or 0) - start, 0)) then
           retry_url = true
           return false
         end
@@ -993,6 +1000,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
             answer_total = context["answer_total"]
           end
           if count > 5 + best
+            or answer_total < get_count(context["api_answers"])
             or (
               (pg > 0 or answer_total > 5)
               and count > best
@@ -1089,6 +1097,7 @@ wget.callbacks.write_to_warc = function(url, http_stat)
       or string.match(newloc, "^https?://wenwen%.sogou%.com/question/notFound") then
       if context["content_seen"]
         or tries > 0
+        or (context["api_answers"] and next(context["api_answers"]))
         or context["entry_url"] ~= url["url"] then
         retry_url = true
       else
