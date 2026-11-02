@@ -9,6 +9,7 @@ import random
 import re
 import shutil
 import socket
+import subprocess
 import sys
 import time
 
@@ -72,7 +73,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20261102.01'
+VERSION = '20261102.02'
 TRACKER_ID = 'sogouwenwen'
 TRACKER_HOST = 'legacy-api.arpa.li'
 MULTI_ITEM_SIZE = 100
@@ -115,6 +116,44 @@ class CheckIP(SimpleTask):
             self._counter = 10
         else:
             self._counter -= 1
+
+
+class GetCountry(SimpleTask):
+    def __init__(self):
+        SimpleTask.__init__(self, 'GetCountry')
+        self.country = None
+        self._counter = 0
+
+    def process(self, item):
+        if self._counter <= 0:
+            command = [
+                WGET_AT,
+                '-nv',
+                '--no-hsts',
+                '--output-document', '-',
+                '--timeout', '10',
+                '--tries', '1',
+                '--no-cookies',
+                '--impersonate', 'firefox148-h1',
+                'https://www.cloudflare.com/cdn-cgi/trace'
+            ]
+            if 'bind_address' in globals():
+                command.extend(['--bind-address', globals()['bind_address']])
+            try:
+                data = subprocess.check_output(command, timeout=20)
+            except Exception:
+                item.log_output('Country lookup failed.')
+                data = b''
+            loc = re.search(br'loc=([A-Z]{2})', data)
+            if loc is None or loc.group(1) == b'XX':
+                self.country = 'unknown'
+                item.log_output('Could not determine cuntry.')
+            else:
+                self.country = str(loc.group(1), 'utf8')
+                item.log_output('Found country {}.'.format(self.country))
+            self._counter = 10
+        self._counter -= 1
+        item['country'] = self.country
 
 
 class PrepareDirectories(SimpleTask):
@@ -326,14 +365,21 @@ def stats_id_function(item):
 
 class WgetArgs(object):
     def realize(self, item):
-        dns_servers = [
-            '1.1.1.1',  # Cloudflare: 101.32.212.153
-            '1.2.4.8',  # CNNIC SDNS: 60.29.240.70, 60.29.240.20
-            '210.2.4.8',  # CNNIC SDNS: 112.65.195.52, 116.128.171.41
-            '180.76.76.76',  # Baidu: 111.30.169.26, 111.30.169.54, 60.29.240.70, 60.29.240.20
-            '218.30.118.6',  # 360: 123.151.69.221, 42.81.178.199, 101.91.40.22, 101.89.42.66
-        ]
-        random.shuffle(dns_servers)
+        if item['country'] == 'CN':
+            dns_servers = [
+                '1.2.4.8',  # CNNIC SDNS: 60.29.240.70, 60.29.240.20
+                '210.2.4.8',  # CNNIC SDNS: 112.65.195.52, 116.128.171.41
+                '180.76.76.76',  # Baidu: 111.30.169.26, 111.30.169.54, 60.29.240.70, 60.29.240.20
+                '218.30.118.6',  # 360: 123.151.69.221, 42.81.178.199, 101.91.40.22, 101.89.42.66
+            ]
+            random.shuffle(dns_servers)
+        else:
+            dns_servers = [
+                '1.1.1.1',
+                '1.0.0.1',
+                '2606:4700:4700::1111',
+                '2606:4700:4700::1001',
+            ]
         wget_args = [
             WGET_AT,
             '-nv',
@@ -415,6 +461,7 @@ project = Project(
 
 pipeline = Pipeline(
     CheckIP(),
+    GetCountry(),
     GetItemFromTracker('https://{}/{}/multi={}/'
         .format(TRACKER_HOST, TRACKER_ID, MULTI_ITEM_SIZE),
         downloader, VERSION),
