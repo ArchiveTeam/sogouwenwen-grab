@@ -5,6 +5,7 @@ from distutils.version import StrictVersion
 import gzip
 import hashlib
 import os
+import random
 import re
 import shutil
 import socket
@@ -71,7 +72,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20261101.04'
+VERSION = '20261102.01'
 TRACKER_ID = 'sogouwenwen'
 TRACKER_HOST = 'legacy-api.arpa.li'
 MULTI_ITEM_SIZE = 100
@@ -325,6 +326,14 @@ def stats_id_function(item):
 
 class WgetArgs(object):
     def realize(self, item):
+        dns_servers = [
+            '1.1.1.1',  # Cloudflare: 101.32.212.153
+            '1.2.4.8',  # CNNIC SDNS: 60.29.240.70, 60.29.240.20
+            '210.2.4.8',  # CNNIC SDNS: 112.65.195.52, 116.128.171.41
+            '180.76.76.76',  # Baidu: 111.30.169.26, 111.30.169.54, 60.29.240.70, 60.29.240.20
+            '218.30.118.6',  # 360: 123.151.69.221, 42.81.178.199, 101.91.40.22, 101.89.42.66
+        ]
+        random.shuffle(dns_servers)
         wget_args = [
             WGET_AT,
             '-nv',
@@ -333,12 +342,7 @@ class WgetArgs(object):
             '--host-lookups', 'dns',
             '--hosts-file', '/dev/null',
             '--resolvconf-file', '/dev/null',
-            '--dns-servers', ','.join([
-                '1.1.1.1',
-                '1.0.0.1',
-                '2606:4700:4700::1111',
-                '2606:4700:4700::1001',
-            ]),
+            '--dns-servers', ','.join(dns_servers),
             '--reject-reserved-subnets',
             #'--prefer-family', ('IPv4' if 'PREFER_IPV4' in os.environ else 'IPv6'),
             '--content-on-error',
