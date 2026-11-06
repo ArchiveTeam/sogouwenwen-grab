@@ -4,6 +4,7 @@ import datetime
 from distutils.version import StrictVersion
 import gzip
 import hashlib
+import ipaddress
 import os
 import random
 import re
@@ -73,7 +74,7 @@ if not WGET_AT:
 #
 # Update this each time you make a non-cosmetic change.
 # It will be added to the WARC files and reported to the tracker.
-VERSION = '20261102.02'
+VERSION = '20261106.01'
 TRACKER_ID = 'sogouwenwen'
 TRACKER_HOST = 'legacy-api.arpa.li'
 MULTI_ITEM_SIZE = 100
@@ -364,6 +365,23 @@ def stats_id_function(item):
 
 
 class WgetArgs(object):
+    IP_RANGES = None
+
+    @classmethod
+    def get_random_ip(cls):
+        if cls.IP_RANGES is None:
+            ranges = []
+            with open('isp-ipv4.txt', 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith('#') or len(line) == 0:
+                        continue
+                    ranges.append(ipaddress.IPv4Network(line))
+            cls.IP_RANGES = list(ipaddress.collapse_addresses(ranges))
+            cls.IP_WEIGHTS = [network.num_addresses for network in cls.IP_RANGES]
+        network = random.choices(cls.IP_RANGES, weights=cls.IP_WEIGHTS)[0]
+        return format(network.network_address + random.randrange(network.num_addresses))
+
     def realize(self, item):
         if item['country'] == 'CN':
             dns_servers = [
@@ -414,7 +432,8 @@ class WgetArgs(object):
             '--warc-header', 'x-wget-at-project-name: ' + TRACKER_ID,
             '--warc-dedup-url-agnostic',
             '--impersonate', 'firefox148-h1',
-            '--header', 'Accept-Encoding: identity'
+            '--header', 'Accept-Encoding: identity',
+            '--header', 'X-Forwarded-For: '+self.get_random_ip()
         ]
 
         for item_name in item['item_name'].split('\0'):
